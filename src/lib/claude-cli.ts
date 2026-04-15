@@ -1,4 +1,18 @@
 import { spawn } from "child_process";
+import { existsSync } from "fs";
+import os from "os";
+import path from "path";
+
+const CLAUDE_BIN = (() => {
+  const candidates = [
+    process.env.CLAUDE_BIN,
+    path.join(os.homedir(), ".local/bin/claude"),
+    path.join(os.homedir(), "bin/claude"),
+    "/opt/homebrew/bin/claude",
+    "/usr/local/bin/claude",
+  ].filter(Boolean) as string[];
+  return candidates.find((p) => existsSync(p)) || "claude";
+})();
 
 export type ClaudeOptions = {
   prompt: string;
@@ -13,16 +27,17 @@ export type ClaudeOptions = {
  */
 export async function runClaude(opts: ClaudeOptions): Promise<string> {
   const args = ["-p", "--output-format", "json"];
-  if (opts.allowedTools && opts.allowedTools.length > 0) {
-    args.push("--allowedTools", opts.allowedTools.join(" "));
-  }
   if (opts.jsonSchema) {
     args.push("--json-schema", JSON.stringify(opts.jsonSchema));
   }
-  args.push(opts.prompt);
+  if (opts.allowedTools && opts.allowedTools.length > 0) {
+    args.push("--allowedTools", ...opts.allowedTools);
+  }
 
   return await new Promise<string>((resolve, reject) => {
-    const child = spawn("claude", args, { env: process.env });
+    const child = spawn(CLAUDE_BIN, args, { env: process.env, stdio: ["pipe", "pipe", "pipe"] });
+    child.stdin.write(opts.prompt);
+    child.stdin.end();
     let stdout = "";
     let stderr = "";
     const timer = setTimeout(() => {
